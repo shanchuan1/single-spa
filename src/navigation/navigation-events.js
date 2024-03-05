@@ -128,10 +128,14 @@ export let originalReplaceState = null;
 
 let historyApiIsPatched = false;
 
+/* 
+确保单页面应用中的路由行为能够正确地与浏览器的历史API进行交互，并确保单页面应用能够正确地响应导航事件
+*/
 // We patch the history API so single-spa is notified of all calls to pushState/replaceState.
 // We patch addEventListener/removeEventListener so we can capture all popstate/hashchange event listeners,
 // and delay calling them until single-spa has finished mounting/unmounting applications
 export function patchHistoryApi(opts) {
+  /* 确保历史API尚未被修补过。如果已经修补过，则抛出错误。 */
   if (historyApiIsPatched) {
     throw Error(
       formatErrorMessage(
@@ -147,10 +151,13 @@ export function patchHistoryApi(opts) {
   urlRerouteOnly =
     opts && opts.hasOwnProperty("urlRerouteOnly") ? opts.urlRerouteOnly : true;
 
+  /* 如果历史API尚未被修补过，则设置 historyApiIsPatched 为 true，表示历史API已经被修补。 */
   historyApiIsPatched = true;
 
+  /* 将 window.history.replaceState 的原始实现保存在 originalReplaceState 变量中，以便后续恢复原始实现。 */
   originalReplaceState = window.history.replaceState;
 
+  /* 监听 hashchange 和 popstate 事件，当 URL 发生变化时触发重新路由， 这样 single-spa 就能够处理相应的路由变化 */
   // We will trigger an app change for any routing events.
   window.addEventListener("hashchange", urlReroute);
   window.addEventListener("popstate", urlReroute);
@@ -158,20 +165,29 @@ export function patchHistoryApi(opts) {
   // Monkeypatch addEventListener so that we can ensure correct timing
   const originalAddEventListener = window.addEventListener;
   const originalRemoveEventListener = window.removeEventListener;
+
+  /* 捕获对 hashchange 和 popstate 事件的监听，确保它们在 single-spa 完成应用的挂载和卸载之后再触发。 */
   window.addEventListener = function (eventName, fn) {
+    /* eventName： hashchange，popstate  */
     if (typeof fn === "function") {
       if (
         routingEventsListeningTo.indexOf(eventName) >= 0 &&
         !find(capturedEventListeners[eventName], (listener) => listener === fn)
       ) {
         capturedEventListeners[eventName].push(fn);
+        /* 监听到的这两个事件都会被推送到capturedEventListeners这个对象内，暂不执行 */
+        /* 
+        const capturedEventListeners = {
+            hashchange: [],
+            popstate: [],
+        };
+        */
         return;
       }
     }
 
     return originalAddEventListener.apply(this, arguments);
   };
-
   window.removeEventListener = function (eventName, listenerFn) {
     if (typeof listenerFn === "function") {
       if (routingEventsListeningTo.indexOf(eventName) >= 0) {
@@ -184,7 +200,7 @@ export function patchHistoryApi(opts) {
 
     return originalRemoveEventListener.apply(this, arguments);
   };
-
+  /* 使用 patchedUpdateState 函数替换原始的方法，以便在调用这两个方法时触发 urlReroute，从而处理路由变化。 */
   window.history.pushState = patchedUpdateState(
     window.history.pushState,
     "pushState"
